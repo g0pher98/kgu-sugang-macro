@@ -44,6 +44,13 @@ class Macro():
         else:
             return self.session.post(self.host + path, headers = header, data = body)
 
+    def log(self, action, success, msg=""):
+        if success:
+            print(f'[*] {action}\t\t ---- Ok!')
+        else:
+            print(f'[*] {action}\t\t ---- Fail...')
+            if msg != '':
+                print('\t\t [ERROR MESSAGE] ' + msg)
 
     def login(self):
         '''
@@ -59,9 +66,9 @@ class Macro():
         if result:
             json_result = json.loads(result[0])
             if json_result['code'] == '1':
-                print(f"[*] login: {json_result['msg']}")
+                self.log('login', True)
             else:
-                print(f"[!] login: {json_result['msg']}")
+                self.log('login', False)
                 return False
         else:
             print('[!] login: nothing in response')
@@ -75,7 +82,11 @@ class Macro():
                 self.referer = self.host + links[0]
             elif "coreMain" in links[1]:
                 self.referer = self.host + links[1]
-
+            else:
+                self.log('login sync', False)
+                return False
+        
+        self.log('login sync', True)
         return True
     
     def load_basket_list(self):
@@ -103,7 +114,7 @@ class Macro():
         # 목록 출력
         print(f"[+] 소망가방 목록")
         for row in self.basket_list['rows']:
-            print(f"    [-] {row['gwamok_kname']} - {row['prof_name']}")
+            print(f"    [-] {row['gwamok_no']} {row['sigan']} {row['gwamok_kname']}")
 
         return self.basket_list
     
@@ -119,13 +130,12 @@ class Macro():
 
         resp = self.request(url)
         self.sugang_list = resp.json()
-        
         self.debug and print(self.basket_list)
 
         # 목록 출력
         print(f"[+] 수강신청 목록")
         for row in self.sugang_list['rows']:
-            print(f"    [-] {row['gwamok_kname']} - {row['prof_name']}")
+            print(f"    [-] {row['gwamok_no']} {row['sigan']} {row['gwamok_kname']}")
 
         return self.basket_list
     
@@ -145,7 +155,9 @@ class Macro():
         # run!!
         print('[+] 수강신청 시작')
         for row in self.basket_list['rows']:
+            print(f"    [+] {row['gwamok_kname']}")
             if row['haksu_cd'] in already_sugang_list:
+                print(f"        [-] 이미 수강신청된 과목입니다.")
                 continue
             url = self.path['sugang_mode'].format(
                 self.profile['lang'], self.initial_time, 'insert', self.get_time()
@@ -159,7 +171,6 @@ class Macro():
 
             resp = self.request(url, body = request_subject)
             result = resp.json()
-            print(f"    [+] {row['gwamok_kname']}")
             print(f"        [-] {result['msg']}")
 
         return
@@ -187,4 +198,5 @@ if __name__ == "__main__":
         except Exception as e:
             print('[!] =============== macro error =============== ')
             print(e)
-            
+        
+        break
