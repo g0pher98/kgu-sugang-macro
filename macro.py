@@ -3,7 +3,11 @@ import time
 import json
 import re
 
+from fake_useragent import UserAgent
+
 from requests.models import LocationParseError
+
+
 
 class Macro():
     def __init__(self, profile_path = "./profile.json", host = "http://sugang.kyonggi.ac.kr", debug = False):
@@ -15,12 +19,13 @@ class Macro():
         self.debug = debug
         self.host = host
         self.referer = ''
-        self.url = {
-            'login': '{}/login?attribute=loginChk&lang={}&fake={}&callback=jQuery112401948917635895624_1628649765381',
-            'basket_list': '{}/sugang?attribute=sugangBasketListJson&lang={}&fake={}&_search={}&nd={}&rows={}&page={}&sidx={}&sord={}',
-            'sugang_list': '{}/sugang?attribute=sugangListJson&lang={}&fake={}&_search={}&nd={}&rows={}&page={}&sidx={}&sord={}',
-            'sugang_mode': '{}/sugang?attribute=sugangMode&lang={}&fake={}&mode={}&fake={}'
+        self.path = {
+            'login': '/login?attribute=loginChk&lang={}&fake={}&callback=jQuery112401948917635895624_1628649765381',
+            'basket_list': '/sugang?attribute=sugangBasketListJson&lang={}&fake={}&_search={}&nd={}&rows={}&page={}&sidx={}&sord={}',
+            'sugang_list': '/sugang?attribute=sugangListJson&lang={}&fake={}&_search={}&nd={}&rows={}&page={}&sidx={}&sord={}',
+            'sugang_mode': '/sugang?attribute=sugangMode&lang={}&fake={}&mode={}&fake={}'
         }
+        self.user_agent = UserAgent().random
         self.blacklist = []
 
         # 로그인 정보 로드
@@ -28,15 +33,26 @@ class Macro():
             self.profile = json.load(fp)
 
         return
+    
+    def request(self, path, header={}, body=None):
+        header['Referer'] = self.referer
+        header['Accept-Language'] = 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,und;q=0.6'
+        header['User-Agent'] = self.user_agent
+        
+        if not body:
+            return self.session.get(self.host + path, headers = header)
+        else:
+            return self.session.post(self.host + path, headers = header, data = body)
+
 
     def login(self):
         '''
         경기대학교 수강신청 홈페이지에 로그인하는 함수
         '''
-        url = self.url['login'].format(self.host, self.profile['lang'], self.initial_time)
+        url = self.path['login'].format(self.profile['lang'], self.initial_time)
         self.debug in ['all', 'login'] and print(f"[DEBUG] {url}")
 
-        resp = self.session.post(url, data=self.profile)
+        resp = self.request(url, body=self.profile)
 
         # 응답 데이터 중 실질적으로 필요한 부분만 파싱 후 처리
         result = re.findall('\{.*\}', resp.text)
@@ -52,7 +68,7 @@ class Macro():
             return False
 
         # sync
-        resp = self.session.get(f"{self.host}/core?attribute=coreFrame_{self.profile['lang']}&fake={self.get_time()}")
+        resp = self.request(f"/core?attribute=coreFrame_{self.profile['lang']}&fake={self.get_time()}")
         links = re.findall("\/core\?attribute=core[a-zA-Z0-9_=:/.?& ]+", resp.text)
         if links and len(links) >= 2:
             if "coreMain" in links[0]:
@@ -73,16 +89,13 @@ class Macro():
         #     'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,und;q=0.6'
         # })
 
-        url = self.url['basket_list'].format(
-            self.host, self.profile['lang'], self.initial_time,
+        url = self.path['basket_list'].format(
+            self.profile['lang'], self.initial_time,
             'false', self.get_time(), -1, 1, '', 'asc'
         )
         self.debug and print(f"[DEBUG] {url}")
 
-        resp = self.session.get(url, headers = {
-            'Referer': self.referer,
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,und;q=0.6'
-        })
+        resp = self.request(url)
         self.basket_list = resp.json()
         
         self.debug and print(self.basket_list)
@@ -98,13 +111,13 @@ class Macro():
         '''
         기 수강신청된 리스트를 가져오는 함수
         '''
-        url = self.url['sugang_list'].format(
-            self.host, self.profile['lang'], self.initial_time,
+        url = self.path['sugang_list'].format(
+            self.profile['lang'], self.initial_time,
             'false', self.get_time(), -1, 1, '', 'asc'
         )
         self.debug and print(f"[DEBUG] {url}")
 
-        resp = self.session.get(url, headers = {'Referer': self.referer})
+        resp = self.request(url)
         self.sugang_list = resp.json()
         
         self.debug and print(self.basket_list)
@@ -134,8 +147,8 @@ class Macro():
         for row in self.basket_list['rows']:
             if row['haksu_cd'] in already_sugang_list:
                 continue
-            url = self.url['sugang_mode'].format(
-                self.host, self.profile['lang'], self.initial_time, 'insert', self.get_time()
+            url = self.path['sugang_mode'].format(
+                self.profile['lang'], self.initial_time, 'insert', self.get_time()
             )
             self.debug and print(f"[DEBUG] {url}")
             request_subject = {
@@ -144,7 +157,7 @@ class Macro():
             }
             self.debug and print(f"[DEBUG] {request_subject}")
 
-            resp = self.session.post(url, data = request_subject, headers = {'Referer': self.referer})
+            resp = self.request(url, body = request_subject)
             result = resp.json()
             print(f"    [+] {row['gwamok_kname']}")
             print(f"        [-] {result['msg']}")
